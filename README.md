@@ -5,8 +5,10 @@ REST + SocketIO + UHID virtual FIDO key. Not affiliated with IDmelon/HID. Use yo
 
 ## Use
 
+```
 pip install 'python-socketio[client]' qrcode
 python3 idmelon_linux.py   # menu: 1 register, 2 QR, 3 status, 4 run
+```
 
 Manual: register | qr | status | sudo ... run | test. Only run needs root (/dev/uhid).
 Append --ble to run only if a site ever enforces proximity (untested path, needs bluetoothd Experimental=true).
