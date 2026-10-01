@@ -30,7 +30,7 @@ Only run needs root (/dev/uhid). Append --ble to run only if a site ever enforce
 
 ## Notes
 
-os is spoofed as Windows 11, server rejects anything else (see SPOOF_OS_* in code).
+os is reported honestly (distro + kernel), server accepts any os object.
 No BLE proximity needed, server doesn't enforce it.
 Token lives in config.json, never commit it (.gitignore covers it).
 

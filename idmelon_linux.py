@@ -28,10 +28,24 @@ from uhid import Uhid, parse_output
 IDMP = "https://idmp.idmelon.com"
 APPVERSION = "3.1.13"
 
-# Server rejects non-Windows os objects, so spoof Windows here.
-# If validation ever relaxes, switch to real uname and delete these.
-SPOOF_OS_NAME = "Microsoft Windows 11 Pro"
-SPOOF_OS_VERSION = "26100"
+# Server needs os as an object; any name/version is accepted (Windows values
+# were used initially, but plain Linux values register fine).
+def _linux_os():
+    name, version = "Linux", "unknown"
+    try:
+        import platform
+        version = platform.release() or version
+        with open("/etc/os-release") as f:
+            for line in f:
+                if line.startswith("PRETTY_NAME="):
+                    name = line.split("=", 1)[1].strip().strip('"')
+                    break
+    except Exception:
+        pass
+    return name, version
+
+
+REAL_OS_NAME, REAL_OS_VERSION = _linux_os()
 
 # Last-resort CID when a Response arrives for an unknown request (shouldn't happen).
 UNKNOWN_CID = 0x01020304
@@ -112,7 +126,7 @@ def unique_id():
 
 def cmd_register():
     uid = unique_id()
-    body = {"uniqueId": uid, "os": {"name": SPOOF_OS_NAME, "version": SPOOF_OS_VERSION},
+    body = {"uniqueId": uid, "os": {"name": REAL_OS_NAME, "version": REAL_OS_VERSION},
             "appversion": APPVERSION, "PCName": socket.gethostname(), "ip": "1.2.3.4"}
     res = http("POST", "/v2/apps", data=body)
     cfg = {"uniqueId": uid, "appId": res["appId"], "token": res["token"],
@@ -154,7 +168,7 @@ def cmd_run():
     # refresh device list (also PUTs PC info like Windows SendApplicationInfo)
     try:
         http("PUT", "/v2/apps", token=cfg["token"],
-             data={"os": {"name": SPOOF_OS_NAME, "version": SPOOF_OS_VERSION},
+             data={"os": {"name": REAL_OS_NAME, "version": REAL_OS_VERSION},
                    "appversion": APPVERSION, "PCName": socket.gethostname()})
     except Exception as e:
         print(f"PUT info failed (non-fatal): {e}")
