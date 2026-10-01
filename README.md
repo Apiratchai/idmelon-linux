@@ -15,11 +15,11 @@ Append --ble to run only if a site ever enforces proximity (untested path, needs
 
 ## Steps
 
-register: introduces PC to server, saves token to ~/.config/idmelon-linux/config.json. Expect appId + QR link.
-qr: fresh pairing QR (ascii + idmelon-qr.png). Scan with IDmelon Authenticator > Pair with a PC.
-status: {} = not paired yet; phone model = paired.
-run: creates HID key, connects socket, relays browser <-> phone. Log in on a site, approve on phone.
-test: offline framing roundtrips, no root/net needed.
+- register: introduces PC to server, saves token to ~/.config/idmelon-linux/config.json. Expect appId + QR link.
+- qr: fresh pairing QR (ascii + idmelon-qr.png). Scan with IDmelon Authenticator > Pair with a PC.
+- status: {} = not paired yet; phone model = paired.
+- run: creates HID key, connects socket, relays browser <-> phone. Log in on a site, approve on phone.
+- test: offline framing roundtrips, no root/net needed.
 
 ## Notes
 
