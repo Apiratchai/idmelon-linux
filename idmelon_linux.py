@@ -78,7 +78,9 @@ def load_config():
 
 def save_config(cfg):
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(cfg, indent=2))
+    tmp = CONFIG.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cfg, indent=2))
+    os.replace(tmp, CONFIG)
     print(f"saved {CONFIG}")
 
 
