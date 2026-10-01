@@ -84,7 +84,7 @@ def save_config(cfg):
     print(f"saved {CONFIG}")
 
 
-def http(method, path, token=None, data=None):
+def http(method, path, token=None, data=None, timeout=20):
     import urllib.request
     url = IDMP + path
     body = json.dumps(data).encode() if data is not None else None
@@ -95,7 +95,7 @@ def http(method, path, token=None, data=None):
     if data is not None:
         hdrs["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, method=method, headers=hdrs)
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode())
 
 
@@ -436,10 +436,19 @@ def cmd_selftest():
 
 def cmd_menu():
     print("IDmelon Pairing Tool for Linux (unofficial)")
+    cfg = load_config()
+    phone = "unknown"
+    if cfg.get("token"):
+        try:
+            ls = http("GET", "/v2/apps/smartphones/last",
+                      token=cfg["token"], timeout=8).get("lastSmartphone") or {}
+            phone = (ls.get("info") or {}).get("model", "not paired")
+        except Exception:
+            pass
     while True:
         cfg = load_config()
         reg = "registered" if cfg.get("token") else "not registered"
-        print(f"\nPC: {reg}")
+        print(f"\nPC: {reg} | Phone: {phone}")
         print("1) register this PC (first time only)")
         print("2) show pairing QR (scan with phone)")
         print("3) show paired phone")
