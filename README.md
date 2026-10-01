@@ -33,3 +33,8 @@ Only run needs root (/dev/uhid). Append --ble to run only if a site ever enforce
 os is spoofed as Windows 11, server rejects anything else (see SPOOF_OS_* in code).
 No BLE proximity needed, server doesn't enforce it.
 Token lives in config.json, never commit it (.gitignore covers it).
+
+## Files
+
+idmelon_linux.py is the tool. uhid.py (virtual HID devices) and ctaphid.py
+(CTAP framing) are generic, import them in your own projects.

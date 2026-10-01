@@ -14,9 +14,16 @@ Usage:
 
 Config: ~/.config/idmelon-linux/config.json (your token, never commit it)
 """
-import json, os, sys, uuid, socket, struct, random, select, threading
+import json, os, sys, uuid, socket, struct, random, threading
 import pwd
 from pathlib import Path
+
+from ctaphid import (
+    BROADCAST_CID, CTAP_CANCEL, CTAP_CBOR, CTAP_INIT, CTAP_KEEPALIVE,
+    CTAP_PING, INIT_BUILD, INIT_CAPS, INIT_PROTOCOL, INIT_VER_MAJOR,
+    INIT_VER_MINOR, HidReassembler, hid_split,
+)
+from uhid import Uhid, parse_output
 
 IDMP = "https://idmp.idmelon.com"
 APPVERSION = "3.1.13"
@@ -25,14 +32,6 @@ APPVERSION = "3.1.13"
 # If validation ever relaxes, switch to real uname and delete these.
 SPOOF_OS_NAME = "Microsoft Windows 11 Pro"
 SPOOF_OS_VERSION = "26100"
-
-# U2FHID_INIT response fields (protocol, version major/minor/build, caps).
-# Caps 0x05 = WINK | LARGEBLOBS, same value real keys report.
-INIT_PROTOCOL, INIT_VER_MAJOR, INIT_VER_MINOR, INIT_BUILD = 2, 0, 1, 1
-INIT_CAPS = 0x05
-
-# Browsers match FIDO keys by HID usage page (F1D0), not VID/PID, so any IDs do.
-UHID_VID, UHID_PID = 0xAAAA, 0xAAAA
 
 # Last-resort CID when a Response arrives for an unknown request (shouldn't happen).
 UNKNOWN_CID = 0x01020304
@@ -69,10 +68,6 @@ HID_TO_BLE = {0x91: 0xBE, 0x86: 0x86, 0x90: 0x83, 0x3F: 0xBF,
               0xBB: 0x82, 0x83: 0x83, 0x81: 0x81}
 BLE_TO_HID = {0xBE: 0x91, 0x86: 0x86, 0xBF: 0x3F, 0x82: 0xBB,
               0x83: 0x90, 0x81: 0x81, 0x90: 0x90}
-
-CTAP_INIT, CTAP_PING, CTAP_MSG, CTAP_LOCK = 0x86, 0x81, 0x83, 0x84
-CTAP_CBOR, CTAP_CANCEL, CTAP_KEEPALIVE, CTAP_WINK = 0x90, 0x91, 0xBB, 0x88
-BROADCAST_CID = 0xFFFFFFFF
 
 
 def load_config():
@@ -186,108 +181,6 @@ def cmd_run():
             stop_ble()
 
 
-# ---------- CTAP HID framing ----------
-
-def hid_split(cid, cmd, data):
-    """Split message into 64-byte HID reports (INIT + CONT)."""
-    ln = len(data)
-    out = [struct.pack(">IBH", cid, cmd, ln) + data[:57]]
-    seq = 0
-    rest = data[57:]
-    while rest:
-        out.append(struct.pack(">IB", cid, seq) + rest[:59])
-        rest = rest[59:]
-        seq += 1
-    return [p.ljust(64, b"\x00")[:64] for p in out]
-
-
-class HidReassembler:
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.cid = None
-        self.cmd = None
-        self.length = 0
-        self.buf = bytearray()
-
-    def feed(self, pkt):
-        """Feed 64-byte report. Returns (cid, cmd, data) when complete, else None."""
-        if len(pkt) < 7:
-            return None
-        cid, = struct.unpack(">I", pkt[:4])
-        b5 = pkt[4]
-        if b5 & 0x80:
-            cmd, ln = pkt[4], struct.unpack(">H", pkt[5:7])[0]
-            self.cid, self.cmd, self.length = cid, cmd, ln
-            self.buf = bytearray(pkt[7:7 + min(ln, 57)])
-        else:
-            seq = b5
-            if cid != self.cid:
-                return None
-            self.buf += pkt[5:5 + min(self.length - len(self.buf), 59)]
-        if len(self.buf) >= self.length:
-            return self.cid, self.cmd, bytes(self.buf[:self.length])
-        return None
-
-
-# ---------- UHID ----------
-
-UHID_DESTROY, UHID_START, UHID_STOP = 1, 2, 3
-UHID_OPEN, UHID_CLOSE, UHID_OUTPUT = 4, 5, 6
-UHID_GET_REPORT, UHID_GET_REPORT_REPLY = 9, 10
-UHID_CREATE2, UHID_INPUT2 = 11, 12
-BUS_USB = 3
-
-
-class Uhid:
-    def __init__(self):
-        self.fd = os.open("/dev/uhid", os.O_RDWR | os.O_NONBLOCK)
-
-    def create(self, name="IDmelon FIDO", vid=UHID_VID, pid=UHID_PID):
-        ev = struct.pack("<L128s64s64sHHLLLL4096s", UHID_CREATE2,
-                         name.encode()[:127], b"", b"", len(HID_REPORT_DESC),
-                         BUS_USB, vid, pid, 0, 0, HID_REPORT_DESC)
-        os.write(self.fd, ev)
-
-    def destroy(self):
-        try:
-            os.write(self.fd, struct.pack("<L", UHID_DESTROY))
-        except OSError:
-            pass
-
-    def send_input(self, data64):
-        d = bytes(data64[:64])
-        os.write(self.fd, struct.pack("<LH4096s", UHID_INPUT2, len(d), d))
-
-    def recv(self, timeout=0.1):
-        r, _, _ = select.select([self.fd], [], [], timeout)
-        if not r:
-            return None
-        try:
-            return os.read(self.fd, 4380)
-        except BlockingIOError:
-            return None
-
-
-def parse_output(ev):
-    typ, = struct.unpack("<L", ev[:4])
-    if typ == UHID_START:
-        return ("start", None)
-    if typ == UHID_STOP:
-        return ("stop", None)
-    if typ == UHID_OPEN:
-        return ("open", None)
-    if typ == UHID_CLOSE:
-        return ("close", None)
-    if typ == UHID_OUTPUT:
-        data, size, _rtype = struct.unpack("<4096sHB", ev[4:4103])
-        return ("output", bytes(data[:size]))
-    if typ == UHID_GET_REPORT:
-        return ("get_report", ev[4:16])
-    return (typ, None)
-
-
 # ---------- SocketIO bridge ----------
 
 def hid_to_ble_hex(cmd, data):
@@ -383,7 +276,7 @@ def bridge(token, smartphone_id, cached_getinfo="", proximity_id=""):
     if os.geteuid() != 0 and not os.access("/dev/uhid", os.W_OK):
         sys.exit("need /dev/uhid write access: re-run with sudo")
     uhid = Uhid()
-    uhid.create()
+    uhid.create("IDmelon FIDO", report_desc=HID_REPORT_DESC)
     print("UHID FIDO device created (check chrome://device-log or fido2-token -L)")
     print("press Ctrl-C to stop")
     sio = socketio.Client(logger=False, engineio_logger=False)
@@ -531,6 +424,9 @@ def cmd_selftest():
         assert ble_hex_to_hid(hx) == (hcmd, b"\x04\x01\x02"), hcmd
     pkts = hid_split(0x01020304, CTAP_KEEPALIVE, b"\x01")
     assert len(pkts) == 1 and struct.unpack(">IBH", pkts[0][:7]) == (0x01020304, 0xBB, 1)
+    payload = bytes(range(64))
+    ev = struct.pack("<L4096sHB", 6, payload, 64, 0)
+    assert parse_output(ev) == ("output", payload)
     pid = make_proximity_id()
     assert pid.startswith("IDme") and pid.endswith("1111") and len(pid) == 16
     print("selftest OK")
