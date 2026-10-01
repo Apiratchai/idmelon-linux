@@ -10,8 +10,15 @@ pip install 'python-socketio[client]' qrcode
 python3 idmelon_linux.py   # menu: 1 register, 2 QR, 3 status, 4 run
 ```
 
-Manual: register | qr | status | sudo ... run | test. Only run needs root (/dev/uhid).
-Append --ble to run only if a site ever enforces proximity (untested path, needs bluetoothd Experimental=true).
+Manual (same as menu):
+```
+python3 idmelon_linux.py register
+python3 idmelon_linux.py qr
+python3 idmelon_linux.py status
+sudo python3 idmelon_linux.py run
+python3 idmelon_linux.py test
+```
+Only run needs root (/dev/uhid). Append --ble to run only if a site ever enforces proximity (untested path, needs bluetoothd Experimental=true).
 
 ## Steps
 
